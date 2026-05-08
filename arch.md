@@ -52,10 +52,10 @@ ones above or below it.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 4: Agent-facing extensions (TypeScript, in pi)       │
-│  - @embercleave/protocol (types only)                       │
-│  - @embercleave/worker  (every pi instance)                 │
-│  - @embercleave/manager (manager pi only)                   │
-│  - @embercleave/quadlet (manager pi only)                   │
+│  - @serisium/embercleave-protocol (types only)                       │
+│  - @serisium/embercleave-worker  (every pi instance)                 │
+│  - @serisium/embercleave-manager (manager pi only)                   │
+│  - @serisium/embercleave-quadlet (manager pi only)                   │
 └─────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3: Pi runtime                                        │
@@ -97,9 +97,9 @@ At steady state, on a running bootc host:
                     │  manager pi                │
                     │  (Quadlet: embercleave-mgr)│
                     │                            │
-                    │  + @embercleave/worker     │
-                    │  + @embercleave/manager    │
-                    │  + @embercleave/quadlet    │
+                    │  + @serisium/embercleave-worker     │
+                    │  + @serisium/embercleave-manager    │
+                    │  + @serisium/embercleave-quadlet    │
                     │                            │
                     │  Bus server (UDS)          │
                     └──────────────┬─────────────┘
@@ -127,7 +127,7 @@ At steady state, on a running bootc host:
 
 ## 4. Component specification
 
-### 4.1 `@embercleave/protocol` (npm package, types-only)
+### 4.1 `@serisium/embercleave-protocol` (npm package, types-only)
 
 **Responsibility:** Single source of truth for bus message types and Typebox
 schemas. No runtime behavior.
@@ -145,7 +145,7 @@ schemas. No runtime behavior.
 Workers send their protocol version in `worker_hello`; manager closes the
 connection on mismatch.
 
-### 4.2 `@embercleave/worker` (npm package, pi extension)
+### 4.2 `@serisium/embercleave-worker` (npm package, pi extension)
 
 **Installed in:** every `pi` instance, including the manager.
 
@@ -177,7 +177,7 @@ connection on mismatch.
 an error string explaining the bus is down. The agent continues to function;
 it just can't talk to siblings.
 
-### 4.3 `@embercleave/manager` (npm package, pi extension)
+### 4.3 `@serisium/embercleave-manager` (npm package, pi extension)
 
 **Installed in:** manager `pi` only.
 
@@ -208,7 +208,7 @@ running workers. Workers will reconnect on their own; manager treats any
 running unit without a corresponding bus connection as "running but
 unreachable" until reconnect arrives.
 
-### 4.4 `@embercleave/quadlet` (npm package, pi extension)
+### 4.4 `@serisium/embercleave-quadlet` (npm package, pi extension)
 
 **Installed in:** manager `pi` only.
 
@@ -228,7 +228,7 @@ unreachable" until reconnect arrives.
 
 **Validation:** `agentId` must match `^[a-z0-9-]+$`. This is non-negotiable —
 it flows into systemd unit names, container names, and filesystem paths.
-The validator (`isValidAgentId`) lives in `@embercleave/protocol` and is
+The validator (`isValidAgentId`) lives in `@serisium/embercleave-protocol` and is
 imported by the worker, manager, and quadlet packages.
 
 **No daemon-reload on spawn:** the template is loaded at boot; spawning is
@@ -344,7 +344,7 @@ Three mechanisms, in order of preference:
 - Node.js + npm.
 - A pre-built `embercleave-worker:latest` container image, embedded in the bootc image
   via `containers-storage:` for offline availability.
-- The four `@embercleave/*` npm packages (ESM, `module: NodeNext`),
+- The four `@serisium/embercleave-*` npm packages (ESM, `module: NodeNext`),
   installed globally.
 - The `embercleave-worker@.container` Quadlet template, copied to
   `/etc/containers/systemd/`.
@@ -367,10 +367,10 @@ RUN dnf install -y nodejs npm git \
 # Pi and the swarm extensions, installed globally
 RUN npm install -g \
       @mariozechner/pi-coding-agent \
-      @embercleave/protocol \
-      @embercleave/worker \
-      @embercleave/manager \
-      @embercleave/quadlet
+      @serisium/embercleave-protocol \
+      @serisium/embercleave-worker \
+      @serisium/embercleave-manager \
+      @serisium/embercleave-quadlet
 
 # Embedded worker image (built separately, copied in)
 COPY embercleave-worker.tar /var/lib/containers/storage-import/
@@ -544,9 +544,9 @@ The decision deferred is whether the RC service authors documents from
 A suggested implementation order that lets each step produce something
 testable:
 
-1. **`@embercleave/protocol`** — types and schemas. No tests beyond type
+1. **`@serisium/embercleave-protocol`** — types and schemas. No tests beyond type
    compilation.
-2. **Bus skeleton in `@embercleave/manager`** — bind the socket, log connections,
+2. **Bus skeleton in `@serisium/embercleave-manager`** — bind the socket, log connections,
    register one no-op tool. Run a manager pi by hand and `nc -U` to it.
 3. **Worker extension** — connect, hello, status events. Run a worker pi
    by hand and watch it appear in the manager's log.
@@ -555,7 +555,7 @@ testable:
 5. **Snippet injection** — `before_agent_start` hook + `swarm_send_snippet`. Test
    by pushing a snippet to a worker and watching it appear in the next
    model turn.
-6. **`@embercleave/quadlet`** — `swarm_spawn` and `swarm_stop`. Test by
+6. **`@serisium/embercleave-quadlet`** — `swarm_spawn` and `swarm_stop`. Test by
    spawning workers from the manager's tools and watching them connect.
 7. **Manager LLM tools** — `swarm_list`, `swarm_steer`, `swarm_logs`. Now
    the manager's LLM can orchestrate.

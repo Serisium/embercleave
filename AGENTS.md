@@ -2,8 +2,8 @@
 
 A hardened, image-based fedora-bootc host that runs a swarm of `pi` coding
 agents under Quadlet-managed rootless Podman. All swarm functionality is
-implemented as four TypeScript pi extensions (`pi-swarm-protocol`,
-`pi-swarm-worker`, `pi-swarm-manager`, `pi-swarm-quadlet`) talking over a
+implemented as four TypeScript pi extensions (`@serisium/embercleave-protocol`,
+`@serisium/embercleave-worker`, `@serisium/embercleave-manager`, `@serisium/embercleave-quadlet`) talking over a
 JSONL Unix-domain bus. A single unprivileged `swarm` user owns all state;
 isolation between workers is by container, not by Linux user.
 
@@ -57,8 +57,8 @@ References: `rest-api.md`, `secrets.md`, `rootless.md`, `image-management.md`.
 
 ### [`quadlet`](skills/quadlet/SKILL.md) — Layer 2 supervision (declarative)
 
-Load when: editing `pi-worker@.container`, `pi-mgr.container`, or
-`pi-swarm.target`; creating drop-ins under `*.container.d/`; reasoning about
+Load when: editing `embercleave-worker@.container`, `embercleave-mgr.container`, or
+`embercleave.target`; creating drop-ins under `*.container.d/`; reasoning about
 template instances; deciding whether `daemon-reload` is required; mapping
 `podman run` flags to `[Container]` keys; hitting Podman issue #25902
 (templated `.volume` cross-ref) or #17662 (`DefaultInstance=` ignored).
@@ -68,8 +68,8 @@ References: `unit-types.md`, `template-units.md`, `dropins.md`,
 
 ### [`systemd-units`](skills/systemd-units/SKILL.md) — Layer 2 supervision (lifecycle)
 
-Load when: writing or editing user units / `pi-swarm.target` /
-`/etc/tmpfiles.d/pi-swarm.conf`; implementing `swarm_logs` (journald) or
+Load when: writing or editing user units / `embercleave.target` /
+`/etc/tmpfiles.d/embercleave.conf`; implementing `swarm_logs` (journald) or
 `swarm_list` (unit enumeration); picking `After=`/`PartOf=`/`BindsTo=`;
 tuning `Restart=` for crash recovery; explaining `loginctl enable-linger`;
 debugging a user unit that did not come up at boot.
@@ -79,13 +79,13 @@ References: `user-units.md`, `templates-and-specifiers.md`, `tmpfiles.md`,
 
 ### [`pi-coding-agent`](skills/pi-coding-agent/SKILL.md) — Layers 3 & 4
 
-Load when: authoring or modifying any of the four `pi-swarm-*` extensions;
+Load when: authoring or modifying any of the four `@serisium/embercleave-*` extensions;
 registering pi tools (`pi.registerTool`); hooking lifecycle events
 (`session_start`, `before_agent_start`, `turn_start`, `tool_*`, `agent_end`,
 `session_shutdown`); calling `pi.sendUserMessage` to inject prompts;
 rendering UI widgets via `ctx.ui.setWidget`; working with pi sessions
 (`--no-session`, `--continue`, `.pi/agent/sessions/`); driving pi
-externally via `--mode rpc`; wiring `PI_SWARM_AGENT_ID` into a worker.
+externally via `--mode rpc`; wiring `EMBERCLEAVE_AGENT_ID` into a worker.
 
 This skill explicitly flags places where the documented pi API diverges
 from arch.md's assumptions (e.g. `before_turn` is actually
@@ -95,7 +95,7 @@ against `badlogic/pi-mono` before merging.
 
 References: `extension-api.md`, `cli-flags.md`, `rpc-mode.md`, `sessions.md`.
 
-### [`typebox`](skills/typebox/SKILL.md) — wire schema for `pi-swarm-protocol`
+### [`typebox`](skills/typebox/SKILL.md) — wire schema for `@serisium/embercleave-protocol`
 
 Load when: defining or modifying the `BusMessage` discriminated union or
 its variants (`worker_hello`, `agent_status`, `subscribe`, `publish`,
@@ -111,7 +111,7 @@ References: `builders.md`, `validation.md`, `compiler.md`,
 ### [`remotecompose`](skills/remotecompose/SKILL.md) — DEFERRED v2
 
 Load **only** when the user explicitly mentions RemoteCompose, RC, the
-`.rc` document format, the `pi-rc-server.container` bridge, or the
+`.rc` document format, the `embercleave-rc-server.container` bridge, or the
 WebSocket-to-RC bridge work. Do not load for general UI work or for the
 manager extension itself. Captures arch.md §10's open question on
 `remote-core` Kotlin/Native artifacts (current finding: `remote-core`
@@ -147,6 +147,54 @@ These rules cut across multiple skills and must be respected in any change:
 - The bootc image and the Quadlet template are image-managed and read-only
   at runtime. Don't try to mutate them on a running host; rebuild the
   image and `bootc upgrade`.
+
+## Implementation conventions
+
+The repo is a pnpm workspace under `packages/`. Each behavioural package
+(`@serisium/embercleave-worker`, `@serisium/embercleave-manager`, `@serisium/embercleave-quadlet`)
+ships ports-and-adapters with three folders inside `src/`: `domain/`,
+`use-cases/`, `adapters/`, plus `framework/extension-entry.ts` for DI
+wiring. The dependency rule is `adapters → use-cases → domain`, never
+reversed. `@serisium/embercleave-protocol` is types-only with a flat `src/` layout.
+
+Per-package navigation (created as packages land):
+
+- [`packages/protocol/AGENTS.md`](packages/protocol/AGENTS.md)
+- [`packages/worker/AGENTS.md`](packages/worker/AGENTS.md)
+- [`packages/manager/AGENTS.md`](packages/manager/AGENTS.md)
+- [`packages/quadlet/AGENTS.md`](packages/quadlet/AGENTS.md)
+
+### File-naming rules
+
+1. **One exported symbol per file.** File named after the symbol.
+   `worker-registry.ts` exports `WorkerRegistry`;
+   `connect-to-bus.use-case.ts` exports `connectToBus`.
+2. **No default exports inside packages.** Only
+   `framework/extension-entry.ts` uses `export default`, because pi
+   extensions require it.
+3. **No internal barrel files.** Only `src/index.ts` is a barrel and only
+   re-exports public API. Internal imports use concrete file paths
+   (`../domain/worker-registry`, never `../domain`).
+4. **Filename suffix encodes role.** `*.use-case.ts`, `*.adapter.ts`,
+   `*.port.ts`, `*.test.ts`. No-suffix files in `domain/` are pure types
+   and functions. Grep `*.use-case.ts` to enumerate behaviours.
+5. **Ports next to their first adapter.** `*.port.ts` lives in `adapters/`,
+   not `domain/`. Use-cases import the port; framework wires the adapter.
+6. **Tests colocated by package.** `packages/<pkg>/test/<thing>.test.ts`.
+7. **Soft 300 LOC ceiling per file.**
+8. **JSDoc only when types are ambiguous.** Comments cite `arch.md:NNN`
+   for architectural decisions.
+9. **`workspace:*` for cross-package deps.** Never write a version range.
+10. **No service locator, no DI container.** Constructor injection in
+    `framework/extension-entry.ts`.
+
+### Tooling commands
+
+- `pnpm install` — install workspace deps
+- `pnpm -r build` — build all packages (`tsc -b`)
+- `pnpm -r test` — run vitest in all packages
+- `pnpm lint` — `biome check .`
+- `pnpm fix` — `biome check --write .`
 
 ## Adding a new skill
 

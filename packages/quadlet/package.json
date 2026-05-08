@@ -1,0 +1,35 @@
+{
+  "name": "@serisium/embercleave-quadlet",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Manager-side pi extension that spawns and stops worker pis via Quadlet-managed systemd user units. See arch.md §4.4.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "AGENTS.md", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@serisium/embercleave-protocol": "workspace:*",
+    "typebox": "^1.1.24"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.73.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.73.1"
+  }
+}

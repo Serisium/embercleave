@@ -1,0 +1,44 @@
+# OS
+.DS_Store
+
+# Build outputs
+**/dist
+**/*.tsbuildinfo
+**/coverage
+
+# Dependencies
+**/node_modules
+.pnpm-store/
+
+# Foreign lockfiles (this repo is pnpm-only; reject npm/yarn/bun installs)
+package-lock.json
+yarn.lock
+bun.lock
+bun.lockb
+
+# Pack tarballs
+*.tgz
+
+# Env files (per-instance worker env lives at ~/.config/embercleave/instances/, not here)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/*
+.idea/
+
+# Tooling
+.claude/settings.local.json
+
+# Misc
+/tmp
+/out-tsc
+.pnp
+.pnp.js
