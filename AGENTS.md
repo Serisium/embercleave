@@ -18,6 +18,8 @@ non-trivial change. Skills below cite it by line number.
 | 2     | Container runtime + supervision         | [`podman`](skills/podman/SKILL.md), [`quadlet`](skills/quadlet/SKILL.md), [`systemd-units`](skills/systemd-units/SKILL.md) |
 | 3     | Pi runtime                              | [`pi-coding-agent`](skills/pi-coding-agent/SKILL.md) |
 | 4     | Agent-facing extensions (TypeScript)    | [`pi-coding-agent`](skills/pi-coding-agent/SKILL.md), [`typebox`](skills/typebox/SKILL.md) |
+| Build | TS build / test / lint tooling          | [`tsc-project-refs`](skills/tsc-project-refs/SKILL.md), [`vitest`](skills/vitest/SKILL.md), [`biome`](skills/biome/SKILL.md) |
+| Meta  | Skill authoring & doc-sync workflow     | [`skill-maintenance`](skills/skill-maintenance/SKILL.md) |
 | v2    | Deferred                                | [`remotecompose`](skills/remotecompose/SKILL.md), [`mcp-gateway`](skills/mcp-gateway/SKILL.md) |
 
 ## How to use these skills
@@ -108,6 +110,56 @@ protocol-version constant or the major-version mismatch check.
 References: `builders.md`, `validation.md`, `compiler.md`,
 `discriminated-unions.md`.
 
+### [`tsc-project-refs`](skills/tsc-project-refs/SKILL.md) — TS build
+
+Load when: editing `tsconfig.base.json` or any per-package `tsconfig.json`;
+adding a new workspace package or wiring a new cross-package dependency in
+`references[]`; debugging a `Cannot find module` that disappears under
+`moduleResolution: node` but fails under NodeNext; explaining why every
+relative import ends in `.js` even though source files are `.ts`; choosing
+between `import type` and a value import; cleaning a stale
+`dist/.tsbuildinfo`.
+
+References: `adding-a-package.md`, `nodenext-resolution.md`.
+
+### [`vitest`](skills/vitest/SKILL.md) — test runner
+
+Load when: writing or modifying any `*.test.ts` under `packages/<pkg>/test/`;
+deciding between a hand-written `class StubX implements XPort` and
+`vi.fn` / `vi.mock`; writing a fake-timer test for the reconnect schedule
+or any other event-driven path; asserting on JSONL bus frames captured
+into a stub; explaining why every package script is
+`vitest run --passWithNoTests`.
+
+References: `stubbing-ports.md`, `async-and-timers.md`.
+
+### [`biome`](skills/biome/SKILL.md) — linter + formatter + import organiser
+
+Load when: running `pnpm lint` / `pnpm fix` / `pnpm format`; debugging a CI
+lint failure; deciding whether a file legitimately needs a `default
+export` (only `framework/extension-entry.ts` does); using a non-null
+assertion in production vs. test code; reading or editing `biome.json`;
+adding a new override block; explaining why a file's formatting changed
+on checkout.
+
+References: `rules-and-overrides.md`.
+
+### [`skill-maintenance`](skills/skill-maintenance/SKILL.md) — Meta: keeping skills in sync with docs
+
+Load when: about to `WebFetch` or `WebSearch` documentation for any
+library this repo uses (vitest, biome, typebox, pi-coding-agent, the
+TypeScript handbook, podman, Quadlet, fedora-bootc, systemd, etc.) to
+fill a gap in a SKILL.md or `references/<topic>.md`; about to add a new
+skill under `skills/`; suspecting a SKILL.md claim is unverified,
+paraphrased, or version-stale; patching a reference file with newly
+fetched documentation. Captures the verify→quote→cite→sync workflow:
+fetch authoritative docs, quote load-bearing claims verbatim, add inline
+parenthetical URL citations matching the `typebox` style, and update
+this `AGENTS.md` (trigger index + layered-model table) for any new
+skill.
+
+References: `research-and-cite.md`, `authoring-conventions.md`.
+
 ### [`remotecompose`](skills/remotecompose/SKILL.md) — DEFERRED v2
 
 Load **only** when the user explicitly mentions RemoteCompose, RC, the
@@ -196,7 +248,15 @@ Per-package navigation (created as packages land):
 - `pnpm lint` — `biome check .`
 - `pnpm fix` — `biome check --write .`
 
-## Adding a new skill
+## Adding or maintaining a skill
+
+The full workflow — including how to verify load-bearing claims against
+official docs, citation conventions, and frontmatter rules — lives in
+the [`skill-maintenance`](skills/skill-maintenance/SKILL.md) skill. Load
+it whenever you author, audit, or patch a skill, or whenever you fetch
+upstream docs for one of the project's libraries.
+
+Quick summary (the skill has the full version):
 
 1. Create `skills/<name>/SKILL.md` with YAML frontmatter:
    ```yaml
@@ -212,6 +272,9 @@ Per-package navigation (created as packages land):
 4. Add a row to the trigger index above with explicit load conditions.
 5. Cite `arch.md` by line number where claims are load-bearing
    (`arch.md:NNN`).
+6. Cite upstream docs inline (parenthetical URL at the claim, matching
+   the `typebox` SKILL.md style). Quote verbatim for exact strings.
+   No `## Sources` footers.
 
 Author skills to Anthropic's spec
 (<https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview>):
