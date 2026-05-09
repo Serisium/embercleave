@@ -1,0 +1,40 @@
+# Worker pi instance. Templated; %i is the agentId. Started at runtime by
+# the @serisium/embercleave-quadlet package via
+#   systemctl --user start embercleave-worker@<id>.service
+# Per-instance config (which extension flags pi loads, manager identity,
+# anthropic key from podman-secret, etc.) lives in the EnvironmentFile.
+
+[Unit]
+Description=Embercleave worker pi (instance %i)
+PartOf=embercleave.target
+After=embercleave.target
+
+[Container]
+Image=localhost/embercleave-worker:latest
+ContainerName=embercleave-worker-%i
+
+EnvironmentFile=%h/.config/embercleave/instances/%i.env
+
+# Bus socket lives on the host tmpfs (declared by tmpfiles.d/embercleave.conf).
+# Mount the directory, not the socket, so reconnect-after-manager-restart works.
+Volume=/run/embercleave:/run/embercleave:rw
+
+# Per-instance workspace; persists across `bootc upgrade` (arch.md §7 runtime layout).
+Volume=%h/embercleave/workspaces/%i:/workspace:Z
+
+# Pi session state on the host; preserves agent history across worker restarts.
+Volume=%h/.pi/agent/sessions:/home/worker/.pi/agent/sessions:Z
+
+WorkingDir=/workspace
+
+# Drop all caps; the pi-coding-agent runtime needs none.
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=embercleave.target

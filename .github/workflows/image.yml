@@ -1,0 +1,78 @@
+name: image
+
+on:
+  pull_request:
+    paths:
+      - "image/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/image.yml"
+  push:
+    branches: [main]
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKER_IMAGE_NAME: localhost/embercleave-worker:latest
+  BOOTC_IMAGE_NAME: localhost/embercleave-bootc:test
+
+jobs:
+  build-and-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman + tooling
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman jq
+          sudo wget -O /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+          CST_VER=v1.19.3
+          sudo wget -O /usr/local/bin/container-structure-test \
+            https://storage.googleapis.com/container-structure-test/${CST_VER}/container-structure-test-linux-amd64
+          sudo chmod +x /usr/local/bin/container-structure-test
+
+      - name: Build worker runtime image
+        run: image/scripts/build-worker.sh
+
+      - name: hadolint
+        run: image/scripts/lint.sh
+
+      - name: Build bootc image
+        run: image/scripts/build-bootc.sh
+
+      - name: container-structure-test (worker + bootc)
+        run: image/scripts/test-structure.sh
+
+  boot:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: build-and-structure
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable nested virt (KVM access)
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients podman jq python3-pip
+          sudo usermod -aG kvm,libvirt "$USER"
+          sudo systemctl enable --now libvirtd
+
+      - name: Install tmt + bootc-image-builder
+        run: |
+          set -euxo pipefail
+          pip install --user 'tmt[provision-bootc]'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          sudo podman pull quay.io/centos-bootc/bootc-image-builder:latest
+
+      - name: Rebuild bootc image (artifact passing across jobs is overkill here)
+        run: image/scripts/build-bootc.sh
+
+      - name: tmt boot smoke
+        run: image/scripts/test-boot.sh

@@ -42,3 +42,6 @@ pnpm-debug.log*
 /out-tsc
 .pnp
 .pnp.js
+
+# Image build artifacts (worker tarball under image/worker/dist/ is covered by **/dist above)
+image/test/.tmt/

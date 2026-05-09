@@ -19,8 +19,9 @@ The full architecture lives in [`arch.md`](./arch.md). Read that first.
 | [`@serisium/embercleave-manager`](./packages/manager)   | manager pi only         | Bus server, registry, routing, manager LLM tools, status widget. |
 | [`@serisium/embercleave-quadlet`](./packages/quadlet)   | manager pi only         | `swarm_spawn` / `swarm_stop` via systemd user units.       |
 
-The deployment-time bootc image (Containerfile, Quadlets, tmpfiles) is
-described in `arch.md` §7. The image build is downstream of this repo.
+The deployment-time bootc image (Containerfile, Quadlets, tmpfiles, build
++ test infra) lives in [`image/`](./image). See `arch.md` §7 for the
+runtime layout and lifecycle.
 
 ## Develop
 

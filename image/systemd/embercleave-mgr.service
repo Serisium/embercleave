@@ -1,0 +1,29 @@
+# Singleton manager pi. Runs on the bootc host (not in a container) under
+# swarm's user-mode systemd, using the host-installed pi + embercleave-manager
+# packages from /usr (image-managed via `npm install -g`).
+#
+# This is a deliberate deviation from arch.md §7's `embercleave-mgr.container`
+# sketch: the manager is the trusted control plane that owns the swarm, so
+# wrapping it in a container adds an indirection without a real isolation
+# benefit (a manager bug compromises every worker regardless). Workers
+# remain containerized via embercleave-worker@.container.
+#
+# Auto-enabled image-wide via `systemctl --global enable embercleave.target`,
+# which `WantedBy=`s this unit through PartOf. linger (set in the bootc
+# Containerfile) lets swarm's user systemd start at boot before any login.
+
+[Unit]
+Description=Embercleave manager pi
+PartOf=embercleave.target
+Before=embercleave.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/embercleave/manager.env
+ExecStart=/usr/bin/pi
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=embercleave.target

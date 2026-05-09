@@ -1,0 +1,55 @@
+schemaVersion: 2.0.0
+
+# Structure assertions for localhost/embercleave-worker:latest.
+# Worker runtime only — pi + protocol + worker. Manager and quadlet
+# packages live on the bootc host, not here.
+
+commandTests:
+  - name: pi binary on PATH
+    command: which
+    args: ["pi"]
+    expectedOutput: ["^/.*/pi$"]
+
+  - name: node version >= 20
+    command: node
+    args: ["--version"]
+    expectedOutput: ["^v(2[0-9]|[3-9][0-9])\\."]
+
+  - name: git available (pi-coding-agent runtime dep)
+    command: git
+    args: ["--version"]
+    expectedOutput: ["^git version "]
+
+  - name: pi-coding-agent globally installed
+    command: npm
+    args: ["ls", "-g", "--depth=0", "--parseable", "@mariozechner/pi-coding-agent"]
+    expectedOutput: ["@mariozechner/pi-coding-agent"]
+
+  - name: embercleave-protocol globally installed
+    command: npm
+    args: ["ls", "-g", "--depth=0", "--parseable", "@serisium/embercleave-protocol"]
+    expectedOutput: ["@serisium/embercleave-protocol"]
+
+  - name: embercleave-worker globally installed
+    command: npm
+    args: ["ls", "-g", "--depth=0", "--parseable", "@serisium/embercleave-worker"]
+    expectedOutput: ["@serisium/embercleave-worker"]
+
+  - name: manager package NOT installed (host-only)
+    command: sh
+    args:
+      - "-c"
+      - "npm ls -g --depth=0 --parseable @serisium/embercleave-manager 2>/dev/null || echo absent"
+    expectedOutput: ["^absent$"]
+    excludedOutput: ["embercleave-manager"]
+
+  - name: runs as unprivileged worker user
+    command: id
+    args: ["-un"]
+    expectedOutput: ["^worker$"]
+
+metadataTest:
+  entrypoint: ["/usr/bin/tini", "--"]
+  cmd: ["pi"]
+  workdir: "/home/worker"
+  user: "worker"

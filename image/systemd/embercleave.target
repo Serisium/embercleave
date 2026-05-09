@@ -1,0 +1,13 @@
+# User-level synchronization unit. Groups embercleave-mgr.service and any
+# active embercleave-worker@*.service for a single on/off switch and
+# ordered shutdown.
+#
+# Auto-enabled image-wide via `systemctl --global enable embercleave.target`
+# in the bootc Containerfile, so swarm's user-mode systemd starts it at boot.
+
+[Unit]
+Description=Embercleave swarm
+StopWhenUnneeded=no
+
+[Install]
+WantedBy=default.target

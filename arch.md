@@ -95,7 +95,8 @@ At steady state, on a running bootc host:
 ```
                     ┌────────────────────────────┐
                     │  manager pi                │
-                    │  (Quadlet: embercleave-mgr)│
+                    │  (host systemd:            │
+                    │   embercleave-mgr.service) │
                     │                            │
                     │  + @serisium/embercleave-worker     │
                     │  + @serisium/embercleave-manager    │
@@ -118,8 +119,14 @@ At steady state, on a running bootc host:
   its own bus as a worker named `manager`. This is intentional: it makes the
   manager addressable for snippet injection and steering by other tools, and
   it lets us test the bus end-to-end without a separate worker.
-- Workers run the worker extension only. They have no Podman socket access
-  and no write permission to `~/.config/containers/systemd/`.
+- Workers run the worker extension only, in containers built from the
+  embedded `embercleave-worker:latest` image. They have no Podman socket
+  access and no write permission to `~/.config/containers/systemd/`.
+- The manager runs on the host directly (not in a container) so the
+  `@serisium/embercleave-quadlet` package can issue `systemctl --user`
+  calls and write per-instance env files under `~/.config/embercleave/`.
+  Containerizing the manager would force a Podman-socket pass-through
+  that buys nothing — see §8 for the security trade-off.
 - All processes run as the same unprivileged Linux user (`swarm`); isolation
   between workers is via Podman containers, not Linux users.
 
@@ -338,33 +345,59 @@ Three mechanisms, in order of preference:
 
 ## 7. Image composition (bootc layer)
 
+The image build lives in [`image/`](./image). What follows is the design;
+the working files (Containerfile, Quadlet template, systemd units,
+tmpfiles, build/test infra) are there.
+
+### Manager on host, workers in containers
+
+The manager runs on the bootc host directly under swarm's user-mode
+systemd, **not** in a container. It is the trusted control plane that
+owns the swarm — wrapping it in a container adds an indirection without
+a real isolation benefit (a manager bug compromises every worker
+regardless). Workers stay containerized because they are the untrusted
+blast radius — one runaway pi shouldn't be able to touch the host.
+
+This means there is one runtime container image (`embercleave-worker:latest`),
+not two, and the `[Install]` chain runs through `embercleave.target`.
+
 ### Build inputs
 
-- `quay.io/fedora/fedora-bootc:latest` as base.
-- Node.js + npm.
-- A pre-built `embercleave-worker:latest` container image, embedded in the bootc image
-  via `containers-storage:` for offline availability.
-- The four `@serisium/embercleave-*` npm packages (ESM, `module: NodeNext`),
-  installed globally.
-- The `embercleave-worker@.container` Quadlet template, copied to
-  `/etc/containers/systemd/`.
-- An `embercleave-mgr.container` Quadlet for the manager (non-templated),
-  pre-enabled to start at boot.
-- An `embercleave.target` Quadlet target that workers and manager attach to,
-  for ordered shutdown.
+- `quay.io/fedora/fedora-bootc` as base, pinned by digest.
+- Node.js + npm + git.
+- The four `@serisium/embercleave-*` npm packages, installed globally —
+  the host runs `pi` directly for the manager, so all four extensions
+  must be resolvable from the host's global modules.
+- A pre-built `embercleave-worker:latest` container image (worker +
+  protocol + pi only), embedded in the bootc image via `podman load`
+  for offline availability.
+- The `embercleave-worker@.container` Quadlet template at
+  `/etc/containers/systemd/` (instances activated at runtime by
+  `@serisium/embercleave-quadlet`).
+- An `embercleave-mgr.service` user systemd unit at `/etc/systemd/user/`
+  (singleton, `ExecStart=/usr/bin/pi`, EnvironmentFile-driven).
+- An `embercleave.target` user systemd unit at `/etc/systemd/user/` for
+  ordered shutdown of manager + active worker instances.
+- A tmpfiles.d snippet that recreates `/run/embercleave/` (mode 0750,
+  owned by `swarm:swarm`) on every boot.
+- `loginctl enable-linger swarm` so swarm's user-mode systemd starts at
+  boot before any login.
+- `systemctl --global enable embercleave.target embercleave-mgr.service`
+  so both auto-start once linger is up.
+- `bootc container lint` as the final `RUN` (catches missing tmpfiles.d
+  entries, content under `/var`, and similar build-time mistakes).
 
 ### Containerfile sketch
 
 ```dockerfile
-FROM quay.io/fedora/fedora-bootc:latest
+ARG FEDORA_BOOTC_DIGEST=sha256:...
+FROM quay.io/fedora/fedora-bootc@${FEDORA_BOOTC_DIGEST}
 
 RUN dnf install -y nodejs npm git \
  && dnf clean all \
- && useradd -m -s /bin/bash swarm \
- && mkdir -p /run/embercleave \
- && chown swarm:swarm /run/embercleave
+ && useradd --create-home --shell /bin/bash swarm \
+ && loginctl enable-linger swarm
 
-# Pi and the swarm extensions, installed globally
 RUN npm install -g \
       @mariozechner/pi-coding-agent \
       @serisium/embercleave-protocol \
@@ -372,34 +405,39 @@ RUN npm install -g \
       @serisium/embercleave-manager \
       @serisium/embercleave-quadlet
 
-# Embedded worker image (built separately, copied in)
-COPY embercleave-worker.tar /var/lib/containers/storage-import/
-RUN podman load -i /var/lib/containers/storage-import/embercleave-worker.tar
+COPY image/worker/dist/embercleave-worker.tar /var/lib/containers/storage-import/
+RUN podman load -i /var/lib/containers/storage-import/embercleave-worker.tar \
+ && rm /var/lib/containers/storage-import/embercleave-worker.tar
 
-# Quadlets
-COPY quadlets/embercleave-worker@.container  /etc/containers/systemd/
-COPY quadlets/embercleave-mgr.container      /etc/containers/systemd/
-COPY quadlets/embercleave.target             /etc/containers/systemd/
+COPY image/quadlets/   /etc/containers/systemd/
+COPY image/systemd/    /etc/systemd/user/
+COPY image/tmpfiles.d/ /etc/tmpfiles.d/
 
-# Tmpfiles for socket directory ownership across reboots
-COPY tmpfiles.d/embercleave.conf /etc/tmpfiles.d/
-
-# Linger so user services start at boot, not at login
-RUN loginctl enable-linger swarm
+RUN systemctl --global enable embercleave.target embercleave-mgr.service
+RUN bootc container lint
 ```
 
 ### Runtime layout
 
 ```
-/etc/containers/systemd/        (read-only, image-managed)
+/etc/containers/systemd/        (read-only, image-managed; Quadlet generator dir)
   embercleave-worker@.container
-  embercleave-mgr.container
+
+/etc/systemd/user/              (read-only, image-managed; user systemd units)
   embercleave.target
+  embercleave-mgr.service
 
-/run/embercleave/               (tmpfs, owned by swarm)
-  bus.sock
+/etc/tmpfiles.d/
+  embercleave.conf              (recreates /run/embercleave/ on boot)
 
-/home/swarm/                    (mutable, persists across upgrades)
+/var/lib/containers/storage/    (image-managed; embedded OCI images)
+  ...embercleave-worker:latest...
+
+/run/embercleave/               (tmpfs, swarm:swarm 0750)
+  bus.sock                      (created by manager at startup)
+
+/home/swarm/                    (mutable, persists across `bootc upgrade`)
+  .config/embercleave/manager.env
   .config/embercleave/instances/<id>.env
   embercleave/workspaces/<id>/
   .pi/agent/sessions/...
@@ -438,10 +476,20 @@ is callable by the manager's own model. This is the feature, not a bug —
 it's how natural-language orchestration works. But it means a prompt
 injection that reaches the manager's LLM can spawn or stop workers.
 
-**Mitigation in v1:** the manager's pi runs in a Quadlet of its own, so the
-worst it can do is start/stop sibling Quadlets within the same user session.
-It can't escape rootless Podman, can't write to `/etc`, can't modify the
-image, can't execute `bootc` operations.
+**Mitigation in v1:** the manager's pi runs as the unprivileged `swarm`
+user (host-level user systemd service, not containerized — see §7). It
+can start/stop sibling user units, read/write under `/home/swarm/`, and
+talk to the bus socket in `/run/embercleave/`. It cannot modify the
+bootc image, write to image-managed paths in `/usr` or `/etc`, execute
+`bootc` operations, or affect any other user's processes — all blocked
+by ordinary Linux user-mode permissions on a composefs read-only root.
+
+The trade-off vs. a containerized manager is conscious: containerizing
+would have required a Podman-socket pass-through to let the manager
+issue `systemctl --user` and write per-instance env files, which
+re-exposes the same surface from inside the container. Worker
+containers, where the prompt-injection blast radius actually lives,
+remain isolated by Podman.
 
 **Mitigation deferred to v2:** a permission-gate pattern on the manager's
 sensitive tools — `swarm_spawn` and `swarm_stop` could require human
@@ -455,7 +503,7 @@ Pi has prior art for this in third-party extensions.
 ### Manager crash
 
 - Workers' sockets EOF. Their reconnect loop kicks in.
-- systemd restarts the manager Quadlet (`Restart=on-failure`).
+- systemd restarts `embercleave-mgr.service` (`Restart=on-failure`).
 - Manager rebinds the socket and runs reconciliation against
   `systemctl list-units`.
 - Workers reconnect, re-send `worker_hello`, manager rebuilds registry.

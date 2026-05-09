@@ -14,7 +14,7 @@ non-trivial change. Skills below cite it by line number.
 
 | Layer | What it is                              | Skill(s)                              |
 |-------|------------------------------------------|----------------------------------------|
-| 1     | Hardened OS image (fedora-bootc)        | [`bootc`](skills/bootc/SKILL.md)       |
+| 1     | Hardened OS image (fedora-bootc) — built in [`image/`](./image) | [`bootc`](skills/bootc/SKILL.md)       |
 | 2     | Container runtime + supervision         | [`podman`](skills/podman/SKILL.md), [`quadlet`](skills/quadlet/SKILL.md), [`systemd-units`](skills/systemd-units/SKILL.md) |
 | 3     | Pi runtime                              | [`pi-coding-agent`](skills/pi-coding-agent/SKILL.md) |
 | 4     | Agent-facing extensions (TypeScript)    | [`pi-coding-agent`](skills/pi-coding-agent/SKILL.md), [`typebox`](skills/typebox/SKILL.md) |
@@ -39,11 +39,15 @@ When a task lands in one of the trigger conditions below, read that skill's
 
 ### [`bootc`](skills/bootc/SKILL.md) — Layer 1 image
 
-Load when: editing the project Containerfile, the `/etc/containers/systemd/`
-layout, the `swarm` user setup, or `/etc/tmpfiles.d/`; running or reasoning
-about `bootc status`/`upgrade`/`switch`/`install`/`rollback`; deciding what
-survives a `bootc upgrade` vs. what is wiped; debugging why something added
-to the Containerfile did not appear on the running host.
+The Layer 1 build lives in [`image/`](./image): `image/Containerfile`,
+`image/worker/Containerfile`, `image/quadlets/`, `image/systemd/`,
+`image/tmpfiles.d/`, `image/scripts/`, `image/test/`.
+
+Load when: editing anything under `image/`; the `swarm` user setup;
+running or reasoning about `bootc status`/`upgrade`/`switch`/`install`/`rollback`;
+deciding what survives a `bootc upgrade` vs. what is wiped; debugging why
+something added to the Containerfile did not appear on the running host;
+adding or modifying the bootc CI workflow at `.github/workflows/image.yml`.
 
 References: `containerfile-authoring.md`, `cli.md`, `update-model.md`.
 
@@ -59,22 +63,29 @@ References: `rest-api.md`, `secrets.md`, `rootless.md`, `image-management.md`.
 
 ### [`quadlet`](skills/quadlet/SKILL.md) — Layer 2 supervision (declarative)
 
-Load when: editing `embercleave-worker@.container`, `embercleave-mgr.container`, or
-`embercleave.target`; creating drop-ins under `*.container.d/`; reasoning about
-template instances; deciding whether `daemon-reload` is required; mapping
+Load when: editing [`image/quadlets/embercleave-worker@.container`](./image/quadlets);
+creating drop-ins under `*.container.d/`; reasoning about template
+instances; deciding whether `daemon-reload` is required; mapping
 `podman run` flags to `[Container]` keys; hitting Podman issue #25902
 (templated `.volume` cross-ref) or #17662 (`DefaultInstance=` ignored).
+
+NOTE: the manager is **not** a Quadlet — it runs on the host as
+`embercleave-mgr.service` (see `systemd-units` below). The only Quadlet
+in `image/quadlets/` is the worker template.
 
 References: `unit-types.md`, `template-units.md`, `dropins.md`,
 `key-mapping.md`.
 
 ### [`systemd-units`](skills/systemd-units/SKILL.md) — Layer 2 supervision (lifecycle)
 
-Load when: writing or editing user units / `embercleave.target` /
-`/etc/tmpfiles.d/embercleave.conf`; implementing `swarm_logs` (journald) or
-`swarm_list` (unit enumeration); picking `After=`/`PartOf=`/`BindsTo=`;
-tuning `Restart=` for crash recovery; explaining `loginctl enable-linger`;
-debugging a user unit that did not come up at boot.
+Load when: writing or editing files under [`image/systemd/`](./image/systemd)
+(`embercleave.target`, `embercleave-mgr.service`) or
+[`image/tmpfiles.d/embercleave.conf`](./image/tmpfiles.d); implementing
+`swarm_logs` (journald) or `swarm_list` (unit enumeration); picking
+`After=`/`PartOf=`/`BindsTo=`; tuning `Restart=` for crash recovery;
+explaining `loginctl enable-linger`; debugging a user unit that did not
+come up at boot. The manager-on-host design (vs. the original Quadlet
+sketch) is documented at `arch.md` §7.
 
 References: `user-units.md`, `templates-and-specifiers.md`, `tmpfiles.md`,
 `journald.md`, `ordering.md`.
@@ -191,14 +202,19 @@ These rules cut across multiple skills and must be respected in any change:
 - Workers have **no Podman socket access** and **no write permission** to
   `~/.config/containers/systemd/`. Only the manager pi can spawn or stop
   workers, push snippets, steer, or read logs.
-- The manager's pi runs in its own Quadlet. Its tools are callable by its
-  own LLM — that is the orchestration feature, but it means a prompt
-  injection that reaches the manager can spawn or stop sibling Quadlets.
-  v1 mitigation is the rootless-Podman blast radius; v2 mitigation is the
-  `mcp-gateway` skill above.
-- The bootc image and the Quadlet template are image-managed and read-only
-  at runtime. Don't try to mutate them on a running host; rebuild the
-  image and `bootc upgrade`.
+- The manager's pi runs on the host as `embercleave-mgr.service` (user
+  systemd, unprivileged `swarm` user — **not** in a Quadlet, see
+  `arch.md` §7 for the rationale). Its tools are callable by its own
+  LLM — that is the orchestration feature, but it means a prompt
+  injection that reaches the manager can spawn or stop sibling worker
+  Quadlets, write under `/home/swarm/`, and talk to the bus socket. v1
+  mitigation is ordinary Linux user-mode permissions on a composefs
+  read-only root (cannot touch `/usr`/`/etc` or run `bootc`); v2
+  mitigation is the `mcp-gateway` skill above.
+- The bootc image, Quadlet template, manager service unit, target, and
+  tmpfiles snippet are image-managed and read-only at runtime. Don't
+  try to mutate them on a running host; edit them under [`image/`](./image),
+  rebuild, and `bootc upgrade`.
 
 ## Implementation conventions
 
@@ -215,6 +231,7 @@ Per-package navigation (created as packages land):
 - [`packages/worker/AGENTS.md`](packages/worker/AGENTS.md)
 - [`packages/manager/AGENTS.md`](packages/manager/AGENTS.md)
 - [`packages/quadlet/AGENTS.md`](packages/quadlet/AGENTS.md)
+- [`image/README.md`](image/README.md) — Layer 1 image (Containerfile, Quadlet template, systemd units, build/test infra)
 
 ### File-naming rules
 
@@ -247,6 +264,13 @@ Per-package navigation (created as packages land):
 - `pnpm -r test` — run vitest in all packages
 - `pnpm lint` — `biome check .`
 - `pnpm fix` — `biome check --write .`
+
+Image (Layer 1) — see [`image/README.md`](image/README.md):
+
+- `pnpm run build:image` — build worker tarball + bootc image (needs Linux + podman)
+- `pnpm run lint:image` — hadolint both Containerfiles
+- `pnpm run test:image:structure` — container-structure-test against built images
+- `pnpm run test:image:boot` — `tmt` boot test in a real VM (slowest; `main`-only in CI)
 
 ## Adding or maintaining a skill
 

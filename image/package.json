@@ -1,0 +1,14 @@
+{
+  "name": "@serisium/embercleave-image",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Layer 1 bootc image: Containerfile, Quadlet templates, tmpfiles.d, build/test infra. See arch.md §7.",
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "scripts": {
+    "build": "echo \"image build runs via image/scripts/build-bootc.sh; this package is test-only\"",
+    "test": "vitest run --passWithNoTests"
+  }
+}

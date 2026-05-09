@@ -1,0 +1,53 @@
+# Layer 1 (per AGENTS.md): the hardened bootc OS image. Boots the host,
+# embeds the prebuilt embercleave-worker:latest container, and ships the
+# Quadlet templates + tmpfiles + systemd target.
+#
+# See arch.md §7 for runtime layout, lifecycle, and rationale. See
+# skills/bootc/SKILL.md and skills/bootc/references/containerfile-authoring.md
+# for the rules every step here must follow.
+
+# Pin by digest for reproducibility. Bump via Renovate or a manual update.
+# Replace the placeholder with the current digest of quay.io/fedora/fedora-bootc:latest
+# before the first real build.
+ARG FEDORA_BOOTC_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+FROM quay.io/fedora/fedora-bootc@${FEDORA_BOOTC_DIGEST}
+
+# Toolchain + unprivileged runtime user. Linger lets swarm's user-mode
+# systemd start at boot before any login; without it the manager Quadlet
+# never fires on cold boot (skills/bootc/SKILL.md "Linger must be enabled").
+RUN dnf install -y nodejs npm git \
+ && dnf clean all \
+ && useradd --create-home --shell /bin/bash swarm \
+ && loginctl enable-linger swarm
+
+# Pi + the four embercleave packages, installed globally so they sit in
+# /usr (image-managed, read-only at runtime, refreshed by `bootc upgrade`).
+RUN npm install -g \
+      @mariozechner/pi-coding-agent \
+      @serisium/embercleave-protocol \
+      @serisium/embercleave-worker \
+      @serisium/embercleave-manager \
+      @serisium/embercleave-quadlet
+
+# Embedded worker image. `podman load` from a tarball, NOT `podman pull`
+# (containerfile-authoring.md DON'T rule). The tarball is produced by
+# image/scripts/build-worker.sh prior to this build.
+COPY image/worker/dist/embercleave-worker.tar /var/lib/containers/storage-import/
+RUN podman load -i /var/lib/containers/storage-import/embercleave-worker.tar \
+ && rm /var/lib/containers/storage-import/embercleave-worker.tar
+
+# Image-managed unit definitions.
+COPY image/quadlets/   /etc/containers/systemd/
+COPY image/systemd/    /etc/systemd/user/
+COPY image/tmpfiles.d/ /etc/tmpfiles.d/
+
+# Auto-start the swarm target for any user with linger enabled (i.e. swarm).
+# Enabling the manager service cascades the WantedBy=embercleave.target
+# symlink so the manager starts when the target does. Worker template
+# instances (embercleave-worker@.service) are activated at runtime by
+# @serisium/embercleave-quadlet, not enabled here.
+RUN systemctl --global enable embercleave.target embercleave-mgr.service
+
+# Final gate: catches missing tmpfiles.d entries, content under /var, and
+# similar build-time mistakes before they become boot-time mistakes.
+RUN bootc container lint
