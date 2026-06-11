@@ -1,9 +1,0 @@
-{
-  "files": [],
-  "references": [
-    { "path": "./packages/protocol" },
-    { "path": "./packages/worker" },
-    { "path": "./packages/manager" },
-    { "path": "./packages/quadlet" }
-  ]
-}

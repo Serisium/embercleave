@@ -1,0 +1,16 @@
+# Proof-of-life container. Long-running on purpose: quadlet-managed
+# containers are always created with --rm, so a run-once container
+# would vanish before Podman Desktop could show it.
+[Unit]
+Description=embercleave hello-world
+
+[Container]
+ContainerName=embercleave-hello
+Image=quay.io/libpod/alpine:latest
+Exec=sleep infinity
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

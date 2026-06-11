@@ -1,9 +1,0 @@
-summary: Embercleave bootc smoke test
-description: |
-  Asserts (inside the booted VM) that the host pivoted to the embercleave
-  bootc image, swarm has linger enabled, the bus socket directory was
-  created with correct ownership by tmpfiles.d, and embercleave-mgr.service
-  came up under swarm's user-mode systemd.
-test: ./test.sh
-duration: 5m
-tier: smoke
