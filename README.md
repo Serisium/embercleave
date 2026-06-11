@@ -1,47 +1,24 @@
 # embercleave
 
-Swarm orchestration for [`@mariozechner/pi-coding-agent`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent)
-on a hardened fedora-bootc host.
+A custom OS image for the Podman Desktop virtual machine, derived from
+`quay.io/podman/machine-os` (the bootc image the machine already boots).
+The eventual goal is a swarm of [`pi`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent)
+coding agents running as containers inside that VM, visible in Podman
+Desktop. Right now it is a hello-world image proving the
+build → switch → verify loop.
 
-A manager pi binds a JSONL bus over a Unix domain socket; worker pis
-connect, identify, and exchange `publish`/`subscribe` messages, context
-snippets, and steering events. Worker lifecycle is owned by Podman
-Quadlet-generated systemd user units.
+The architecture — all of it, no futures — is in [`arch.md`](./arch.md).
 
-The full architecture lives in [`arch.md`](./arch.md). Read that first.
-
-## Packages
-
-| Package                                   | Where it runs           | Purpose                                                    |
-| ----------------------------------------- | ----------------------- | ---------------------------------------------------------- |
-| [`@serisium/embercleave-protocol`](./packages/protocol) | (types-only)            | Wire schemas + agentId validator. Zero IO.                 |
-| [`@serisium/embercleave-worker`](./packages/worker)     | every pi instance       | Bus client, status forwarding, snippet injection, swarm tools. |
-| [`@serisium/embercleave-manager`](./packages/manager)   | manager pi only         | Bus server, registry, routing, manager LLM tools, status widget. |
-| [`@serisium/embercleave-quadlet`](./packages/quadlet)   | manager pi only         | `swarm_spawn` / `swarm_stop` via systemd user units.       |
-
-The deployment-time bootc image (Containerfile, Quadlets, tmpfiles, build
-+ test infra) lives in [`image/`](./image). See `arch.md` §7 for the
-runtime layout and lifecycle.
-
-## Develop
-
-Requires Node `>=20.18.1` and pnpm `>=9.15.0` (managed via corepack and
-the project's `.nvmrc` / `packageManager`).
+## Use
 
 ```bash
-nvm use                    # picks up .nvmrc
-corepack enable            # enables pnpm matching packageManager
-pnpm install
-pnpm -r run build
-pnpm -r run test
-pnpm lint
+podman build -t localhost/embercleave-os:dev .
+podman machine os apply containers-storage:localhost/embercleave-os:dev --restart
+podman machine ssh "cat /usr/lib/embercleave-release"
 ```
 
-The repo follows a ports-and-adapters layout per package:
-`src/domain/`, `src/use-cases/`, `src/adapters/`, `src/framework/`. The
-dependency rule is `adapters → use-cases → domain`, never reversed.
-See [`AGENTS.md`](./AGENTS.md) for the full conventions and the skill
-index.
+Roll back with `podman machine ssh sudo bootc rollback` and restart the
+machine.
 
 ## License
 
